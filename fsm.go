@@ -5,10 +5,13 @@ import (
 	"sync"
 )
 
+// StateID is a type for state identifier
 type StateID string
 
+// Callback is a function that will be called on state transition
 type Callback func(f *FSM, args ...any)
 
+// FSM is a finite state machine
 type FSM struct {
 	initialStateID StateID
 	callbacks      map[StateID]Callback
@@ -16,6 +19,7 @@ type FSM struct {
 	userStates     map[int64]StateID
 }
 
+// New creates a new FSM
 func New(initialStateName StateID, callbacks map[StateID]Callback) *FSM {
 	s := &FSM{
 		initialStateID: initialStateName,
@@ -30,16 +34,19 @@ func New(initialStateName StateID, callbacks map[StateID]Callback) *FSM {
 	return s
 }
 
+// AddCallback adds a callback for a state
 func (f *FSM) AddCallback(stateID StateID, callback Callback) {
 	f.callbacks[stateID] = callback
 }
 
+// AddCallbacks adds callbacks for states
 func (f *FSM) AddCallbacks(cb map[StateID]Callback) {
 	for stateID, callback := range cb {
 		f.callbacks[stateID] = callback
 	}
 }
 
+// Transition transitions the user to a new state
 func (f *FSM) Transition(userID int64, stateID StateID, args ...any) {
 	f.userStatesMu.Lock()
 
@@ -58,6 +65,7 @@ func (f *FSM) Transition(userID int64, stateID StateID, args ...any) {
 	}
 }
 
+// Current returns the current state of the user
 func (f *FSM) Current(userID int64) StateID {
 	f.userStatesMu.RLock()
 	defer f.userStatesMu.RUnlock()
@@ -71,12 +79,14 @@ func (f *FSM) Current(userID int64) StateID {
 	return userStateID
 }
 
+// Reset resets the state of the user to the initial state
 func (f *FSM) Reset(userID int64) {
 	f.userStatesMu.Lock()
 	delete(f.userStates, userID)
 	f.userStatesMu.Unlock()
 }
 
+// MarshalJSON marshals the FSM to JSON
 func (f *FSM) MarshalJSON() ([]byte, error) {
 	f.userStatesMu.RLock()
 	defer f.userStatesMu.RUnlock()
@@ -92,6 +102,7 @@ func (f *FSM) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// UnmarshalJSON unmarshals the FSM from JSON
 func (f *FSM) UnmarshalJSON(data []byte) error {
 	f.userStatesMu.Lock()
 	defer f.userStatesMu.Unlock()
