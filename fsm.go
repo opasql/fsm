@@ -17,6 +17,8 @@ type FSM struct {
 	callbacks      map[StateID]Callback
 	userStatesMu   sync.RWMutex
 	userStates     map[int64]StateID
+	storageMx      sync.Mutex
+	storage        map[int64]map[any]any
 }
 
 // New creates a new FSM
@@ -25,6 +27,7 @@ func New(initialStateName StateID, callbacks map[StateID]Callback) *FSM {
 		initialStateID: initialStateName,
 		callbacks:      make(map[StateID]Callback),
 		userStates:     make(map[int64]StateID),
+		storage:        make(map[int64]map[any]any),
 	}
 
 	for stateID, callback := range callbacks {
@@ -92,13 +95,15 @@ func (f *FSM) MarshalJSON() ([]byte, error) {
 	defer f.userStatesMu.RUnlock()
 
 	type response struct {
-		InitialStateID StateID           `json:"initial_state_id"`
-		UserStates     map[int64]StateID `json:"user_states"`
+		InitialStateID StateID               `json:"initial_state_id"`
+		UserStates     map[int64]StateID     `json:"user_states"`
+		Storage        map[int64]map[any]any `json:"storage"`
 	}
 
 	return json.Marshal(response{
 		InitialStateID: f.initialStateID,
 		UserStates:     f.userStates,
+		Storage:        f.storage,
 	})
 }
 
@@ -108,8 +113,9 @@ func (f *FSM) UnmarshalJSON(data []byte) error {
 	defer f.userStatesMu.Unlock()
 
 	type response struct {
-		InitialStateID StateID           `json:"initial_state_id"`
-		UserStates     map[int64]StateID `json:"user_states"`
+		InitialStateID StateID               `json:"initial_state_id"`
+		UserStates     map[int64]StateID     `json:"user_states"`
+		Storage        map[int64]map[any]any `json:"storage"`
 	}
 
 	var r response
@@ -119,6 +125,31 @@ func (f *FSM) UnmarshalJSON(data []byte) error {
 
 	f.initialStateID = r.InitialStateID
 	f.userStates = r.UserStates
+	f.storage = r.Storage
 
 	return nil
+}
+
+// Set sets a value for a key for a user
+func (f *FSM) Set(userID int64, key, value any) {
+	f.storageMx.Lock()
+	defer f.storageMx.Unlock()
+	s, ok := f.storage[userID]
+	if !ok {
+		s = make(map[any]any)
+		f.storage[userID] = s
+	}
+	s[key] = value
+}
+
+// Get gets a value for a key for a user
+func (f *FSM) Get(userID int64, key any) (any, bool) {
+	f.storageMx.Lock()
+	defer f.storageMx.Unlock()
+	s, ok := f.storage[userID]
+	if !ok {
+		return nil, false
+	}
+	v, ok := s[key]
+	return v, ok
 }
