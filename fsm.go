@@ -2,7 +2,6 @@ package fsm
 
 import (
 	"encoding/json"
-	"sync"
 )
 
 // StateID is a type for state identifier
@@ -15,23 +14,43 @@ type Callback func(f *FSM, args ...any)
 type FSM struct {
 	initialStateID StateID
 	callbacks      map[StateID]Callback
-	userStatesMu   sync.RWMutex
-	userStates     map[int64]StateID
-	storageMx      sync.Mutex
-	storage        map[int64]map[any]any
+	userStates     UserStateStorage
+	storage        DataStorage
+}
+
+// UserStateStorage is an interface for user state storage
+type UserStateStorage interface {
+	Set(userID int64, stateID StateID) error
+	Exists(userID int64) (bool, error)
+	Get(userID int64) (StateID, error)
+	MarshalJSON() ([]byte, error)
+	UnmarshalJSON(data []byte) error
+}
+
+// DataStorage is an interface for data storage
+type DataStorage interface {
+	Set(userID int64, key, value any) error
+	Get(userID int64, key any) (any, error)
+	Delete(userID int64, key any) error
+	MarshalJSON() ([]byte, error)
+	UnmarshalJSON(data []byte) error
 }
 
 // New creates a new FSM
-func New(initialStateName StateID, callbacks map[StateID]Callback) *FSM {
+func New(initialStateName StateID, callbacks map[StateID]Callback, opts ...Option) *FSM {
 	s := &FSM{
 		initialStateID: initialStateName,
 		callbacks:      make(map[StateID]Callback),
-		userStates:     make(map[int64]StateID),
-		storage:        make(map[int64]map[any]any),
+		userStates:     initialUserStateStorage(),
+		storage:        initialDataStorage(),
 	}
 
 	for stateID, callback := range callbacks {
 		s.callbacks[stateID] = callback
+	}
+
+	for _, opt := range opts {
+		opt(s)
 	}
 
 	return s
@@ -50,54 +69,55 @@ func (f *FSM) AddCallbacks(cb map[StateID]Callback) {
 }
 
 // Transition transitions the user to a new state
-func (f *FSM) Transition(userID int64, stateID StateID, args ...any) {
-	f.userStatesMu.Lock()
-
-	userStateID, okUserState := f.userStates[userID]
-	if !okUserState {
-		userStateID = f.initialStateID
-		f.userStates[userID] = userStateID
+func (f *FSM) Transition(userID int64, stateID StateID, args ...any) error {
+	err := f.userStates.Set(userID, stateID)
+	if err != nil {
+		return err
 	}
-	f.userStates[userID] = stateID
-
-	f.userStatesMu.Unlock()
 
 	cb, okCb := f.callbacks[stateID]
 	if okCb {
 		cb(f, args...)
 	}
+
+	return nil
 }
 
 // Current returns the current state of the user
-func (f *FSM) Current(userID int64) StateID {
-	f.userStatesMu.RLock()
-	defer f.userStatesMu.RUnlock()
-
-	userStateID, ok := f.userStates[userID]
+func (f *FSM) Current(userID int64) (StateID, error) {
+	ok, err := f.userStates.Exists(userID)
+	if err != nil {
+		return "", err
+	}
 	if !ok {
-		f.userStates[userID] = f.initialStateID
-		return f.initialStateID
+		err = f.userStates.Set(userID, f.initialStateID)
+		if err != nil {
+			return "", err
+		}
+
+		return f.initialStateID, nil
 	}
 
-	return userStateID
+	state, err := f.userStates.Get(userID)
+	if err != nil {
+		return "", err
+	}
+
+	return state, nil
 }
 
 // Reset resets the state of the user to the initial state
-func (f *FSM) Reset(userID int64) {
-	f.userStatesMu.Lock()
-	delete(f.userStates, userID)
-	f.userStatesMu.Unlock()
+func (f *FSM) Reset(userID int64) error {
+	return f.userStates.Set(userID, f.initialStateID)
 }
 
 // MarshalJSON marshals the FSM to JSON
 func (f *FSM) MarshalJSON() ([]byte, error) {
-	f.userStatesMu.RLock()
-	defer f.userStatesMu.RUnlock()
 
 	type response struct {
-		InitialStateID StateID               `json:"initial_state_id"`
-		UserStates     map[int64]StateID     `json:"user_states"`
-		Storage        map[int64]map[any]any `json:"storage"`
+		InitialStateID StateID          `json:"initial_state_id"`
+		UserStates     UserStateStorage `json:"user_states"`
+		Storage        DataStorage      `json:"storage"`
 	}
 
 	return json.Marshal(response{
@@ -109,13 +129,11 @@ func (f *FSM) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON unmarshals the FSM from JSON
 func (f *FSM) UnmarshalJSON(data []byte) error {
-	f.userStatesMu.Lock()
-	defer f.userStatesMu.Unlock()
 
 	type response struct {
-		InitialStateID StateID               `json:"initial_state_id"`
-		UserStates     map[int64]StateID     `json:"user_states"`
-		Storage        map[int64]map[any]any `json:"storage"`
+		InitialStateID StateID          `json:"initial_state_id"`
+		UserStates     UserStateStorage `json:"user_states"`
+		Storage        DataStorage      `json:"storage"`
 	}
 
 	var r response
@@ -131,25 +149,21 @@ func (f *FSM) UnmarshalJSON(data []byte) error {
 }
 
 // Set sets a value for a key for a user
-func (f *FSM) Set(userID int64, key, value any) {
-	f.storageMx.Lock()
-	defer f.storageMx.Unlock()
-	s, ok := f.storage[userID]
-	if !ok {
-		s = make(map[any]any)
-		f.storage[userID] = s
+func (f *FSM) Set(userID int64, key, value any) error {
+	err := f.storage.Set(userID, key, value)
+	if err != nil {
+		return err
 	}
-	s[key] = value
+
+	return nil
 }
 
 // Get gets a value for a key for a user
-func (f *FSM) Get(userID int64, key any) (any, bool) {
-	f.storageMx.Lock()
-	defer f.storageMx.Unlock()
-	s, ok := f.storage[userID]
-	if !ok {
-		return nil, false
+func (f *FSM) Get(userID int64, key any) (any, bool, error) {
+	v, err := f.storage.Get(userID, key)
+	if err != nil {
+		return nil, false, err
 	}
-	v, ok := s[key]
-	return v, ok
+
+	return v, true, nil
 }
