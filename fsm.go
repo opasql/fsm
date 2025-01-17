@@ -2,6 +2,7 @@ package fsm
 
 import (
 	"encoding/json"
+	"fmt"
 )
 
 // StateID is a type for state identifier
@@ -72,7 +73,7 @@ func (f *FSM) AddCallbacks(cb map[StateID]Callback) {
 func (f *FSM) Transition(userID int64, stateID StateID, args ...any) error {
 	err := f.userStates.Set(userID, stateID)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to set user state: %w", err)
 	}
 
 	cb, okCb := f.callbacks[stateID]
@@ -87,12 +88,12 @@ func (f *FSM) Transition(userID int64, stateID StateID, args ...any) error {
 func (f *FSM) Current(userID int64) (StateID, error) {
 	ok, err := f.userStates.Exists(userID)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to check user state: %w", err)
 	}
 	if !ok {
 		err = f.userStates.Set(userID, f.initialStateID)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("failed to set user state to initial: %w", err)
 		}
 
 		return f.initialStateID, nil
@@ -100,7 +101,7 @@ func (f *FSM) Current(userID int64) (StateID, error) {
 
 	state, err := f.userStates.Get(userID)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get user state: %w", err)
 	}
 
 	return state, nil
@@ -148,22 +149,32 @@ func (f *FSM) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Set sets a value for a key for a user
+// Set sets a value to data storage by userID and key
 func (f *FSM) Set(userID int64, key, value any) error {
 	err := f.storage.Set(userID, key, value)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to set user data: %w", err)
 	}
 
 	return nil
 }
 
-// Get gets a value for a key for a user
-func (f *FSM) Get(userID int64, key any) (any, bool, error) {
+// Get gets a value from data storage by userID and key
+func (f *FSM) Get(userID int64, key any) (any, error) {
 	v, err := f.storage.Get(userID, key)
 	if err != nil {
-		return nil, false, err
+		return nil, fmt.Errorf("failed to get user data: %w", err)
 	}
 
-	return v, true, nil
+	return v, nil
+}
+
+// Delete deletes a value from data storage by userID and key
+func (f *FSM) Delete(userID int64, key any) error {
+	err := f.storage.Delete(userID, key)
+	if err != nil {
+		return fmt.Errorf("failed to delete user data: %w", err)
+	}
+
+	return nil
 }

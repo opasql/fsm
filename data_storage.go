@@ -2,19 +2,20 @@ package fsm
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
 )
 
-// defaultDataStorage is a type for default data storage
+// dataStorage is a type for default data storage
 type dataStorage struct {
 	mu      sync.Mutex
-	storage map[int64]map[any]any
+	Storage map[int64]map[any]any `json:"storage"`
 }
 
 // initialDataStorage creates in memory storage for user's data
 func initialDataStorage() *dataStorage {
 	return &dataStorage{
-		storage: make(map[int64]map[any]any),
+		Storage: make(map[int64]map[any]any),
 	}
 }
 
@@ -22,10 +23,11 @@ func initialDataStorage() *dataStorage {
 func (d *dataStorage) Set(userID int64, key, value any) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	s, ok := d.storage[userID]
+
+	s, ok := d.Storage[userID]
 	if !ok {
 		s = make(map[any]any)
-		d.storage[userID] = s
+		d.Storage[userID] = s
 	}
 
 	s[key] = value
@@ -38,19 +40,24 @@ func (d *dataStorage) Get(userID int64, key any) (any, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	_, ok := d.storage[userID]
-	if !ok {
-		return nil, nil
+	if _, ok := d.Storage[userID]; !ok {
+		return nil, fmt.Errorf("%w, userID:%d, key:%v", errNoUserData, userID, key)
 	}
 
-	return d.storage[userID][key], nil
+	return d.Storage[userID][key], nil
 }
 
 // Delete deletes user's data from data storage
 func (d *dataStorage) Delete(userID int64, key any) error {
 	d.mu.Lock()
-	delete(d.storage, userID)
-	d.mu.Unlock()
+	defer d.mu.Unlock()
+
+	if _, ok := d.Storage[userID]; !ok {
+		return nil
+	}
+
+	delete(d.Storage[userID], key)
+
 	return nil
 }
 
@@ -59,7 +66,7 @@ func (d *dataStorage) MarshalJSON() ([]byte, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	return json.Marshal(d.storage)
+	return json.Marshal(d.Storage)
 }
 
 // UnmarshalJSON implements json.Unmarshaler
@@ -67,12 +74,5 @@ func (d *dataStorage) UnmarshalJSON(data []byte) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	var response map[int64]map[any]any
-	if err := json.Unmarshal(data, &response); err != nil {
-		return err
-	}
-
-	d.storage = response
-
-	return nil
+	return json.Unmarshal(data, &d.Storage)
 }

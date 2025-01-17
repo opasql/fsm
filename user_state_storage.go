@@ -2,19 +2,20 @@ package fsm
 
 import (
 	"encoding/json"
+	"fmt"
 	"sync"
 )
 
 // userStateStorage is a type for default user's state storage
 type userStateStorage struct {
 	mu      sync.RWMutex
-	storage map[int64]StateID
+	Storage map[int64]StateID `json:"storage"`
 }
 
 // initialUserStateStorage creates in memory storage for user's state
 func initialUserStateStorage() *userStateStorage {
 	return &userStateStorage{
-		storage: make(map[int64]StateID),
+		Storage: make(map[int64]StateID),
 	}
 }
 
@@ -22,7 +23,9 @@ func initialUserStateStorage() *userStateStorage {
 func (u *userStateStorage) Set(userID int64, stateID StateID) error {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	u.storage[userID] = stateID
+
+	u.Storage[userID] = stateID
+
 	return nil
 }
 
@@ -30,7 +33,9 @@ func (u *userStateStorage) Set(userID int64, stateID StateID) error {
 func (u *userStateStorage) Exists(userID int64) (bool, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	_, ok := u.storage[userID]
+
+	_, ok := u.Storage[userID]
+
 	return ok, nil
 }
 
@@ -39,9 +44,9 @@ func (u *userStateStorage) Get(userID int64) (StateID, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
-	s, ok := u.storage[userID]
+	s, ok := u.Storage[userID]
 	if !ok {
-		return "", nil
+		return "", fmt.Errorf("%w: userID: %d", errNoUserState, userID)
 	}
 
 	return s, nil
@@ -52,7 +57,7 @@ func (u *userStateStorage) MarshalJSON() ([]byte, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
-	return json.Marshal(u.storage)
+	return json.Marshal(u.Storage)
 }
 
 // UnmarshalJSON implements json.Unmarshaler
@@ -60,5 +65,5 @@ func (u *userStateStorage) UnmarshalJSON(data []byte) error {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
-	return json.Unmarshal(data, &u.storage)
+	return json.Unmarshal(data, &u.Storage)
 }
