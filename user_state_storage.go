@@ -1,7 +1,6 @@
 package fsm
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 )
@@ -9,7 +8,7 @@ import (
 // userStateStorage is a type for default user's state storage
 type userStateStorage struct {
 	mu      sync.RWMutex
-	Storage map[int64]StateID `json:"storage"`
+	Storage map[int64]StateID
 }
 
 // initialUserStateStorage creates in memory storage for user's state
@@ -50,20 +49,4 @@ func (u *userStateStorage) Get(userID int64) (StateID, error) {
 	}
 
 	return s, nil
-}
-
-// MarshalJSON implements json.Marshaler
-func (u *userStateStorage) MarshalJSON() ([]byte, error) {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-
-	return json.Marshal(u.Storage)
-}
-
-// UnmarshalJSON implements json.Unmarshaler
-func (u *userStateStorage) UnmarshalJSON(data []byte) error {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-
-	return json.Unmarshal(data, &u.Storage)
 }

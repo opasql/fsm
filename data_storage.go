@@ -1,32 +1,31 @@
 package fsm
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 )
 
 // dataStorage is a type for default data storage
-type dataStorage struct {
+type dataStorage[K comparable, V any] struct {
 	mu      sync.Mutex
-	Storage map[int64]map[any]any `json:"storage"`
+	Storage map[int64]map[K]V
 }
 
 // initialDataStorage creates in memory storage for user's data
-func initialDataStorage() *dataStorage {
-	return &dataStorage{
-		Storage: make(map[int64]map[any]any),
+func initialDataStorage[K comparable, V any]() *dataStorage[K, V] {
+	return &dataStorage[K, V]{
+		Storage: make(map[int64]map[K]V),
 	}
 }
 
 // Set sets user's data to data storage
-func (d *dataStorage) Set(userID int64, key, value any) error {
+func (d *dataStorage[K, V]) Set(userID int64, key K, value V) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	s, ok := d.Storage[userID]
 	if !ok {
-		s = make(map[any]any)
+		s = make(map[K]V)
 		d.Storage[userID] = s
 	}
 
@@ -36,19 +35,19 @@ func (d *dataStorage) Set(userID int64, key, value any) error {
 }
 
 // Get gets user's data from data storage
-func (d *dataStorage) Get(userID int64, key any) (any, error) {
+func (d *dataStorage[K, V]) Get(userID int64, key K) (any, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if _, ok := d.Storage[userID]; !ok {
-		return nil, fmt.Errorf("%w, userID:%d, key:%v", errNoUserData, userID, key)
+		return nil, fmt.Errorf("%w, userID:%d, comparable:%v", errNoUserData, userID, key)
 	}
 
 	return d.Storage[userID][key], nil
 }
 
 // Delete deletes user's data from data storage
-func (d *dataStorage) Delete(userID int64, key any) error {
+func (d *dataStorage[K, V]) Delete(userID int64, key K) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -59,20 +58,4 @@ func (d *dataStorage) Delete(userID int64, key any) error {
 	delete(d.Storage[userID], key)
 
 	return nil
-}
-
-// MarshalJSON implements json.Marshaler
-func (d *dataStorage) MarshalJSON() ([]byte, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	return json.Marshal(d.Storage)
-}
-
-// UnmarshalJSON implements json.Unmarshaler
-func (d *dataStorage) UnmarshalJSON(data []byte) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	return json.Unmarshal(data, &d.Storage)
 }

@@ -12,16 +12,9 @@ import (
 	"github.com/go-telegram/fsm"
 )
 
-type userData struct {
-	Name string
-	Age  int
-}
-
 type Application struct {
 	b *bot.Bot
-	f *fsm.FSM
-
-	users map[int64]*userData
+	f *fsm.FSM[string, string]
 }
 
 const (
@@ -36,9 +29,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	app := &Application{
-		users: make(map[int64]*userData),
-	}
+	app := &Application{}
 
 	opts := []bot.Option{
 		bot.WithDefaultHandler(app.handlerDefault),
@@ -46,7 +37,7 @@ func main() {
 		bot.WithMessageTextHandler("/cancel", bot.MatchTypeExact, app.handlerCancel),
 	}
 
-	app.f = fsm.New(
+	app.f = fsm.New[string, string](
 		stateDefault,
 		map[fsm.StateID]fsm.Callback{
 			stateStart:   app.callbackStart,
@@ -81,7 +72,7 @@ func (app *Application) handlerCancel(ctx context.Context, b *bot.Bot, update *m
 		Text:   "Canceled",
 	})
 
-	app.f.Transition(userID, stateDefault)
+	app.f.Transition(ctx, userID, stateDefault)
 }
 
 func (app *Application) handlerForm(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -94,7 +85,7 @@ func (app *Application) handlerForm(ctx context.Context, b *bot.Bot, update *mod
 		return
 	}
 
-	app.f.Transition(userID, stateStart, chatID, userID)
+	app.f.Transition(ctx, userID, stateStart, chatID, userID)
 }
 
 func (app *Application) handlerDefault(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -124,9 +115,9 @@ func (app *Application) handlerDefault(ctx context.Context, b *bot.Bot, update *
 			return
 		}
 
-		app.users[userID].Name = update.Message.Text
+		app.f.Set(userID, "name", update.Message.Text)
 
-		app.f.Transition(userID, stateAskAge, chatID)
+		app.f.Transition(ctx, userID, stateAskAge, chatID)
 
 	case stateAskAge:
 		age, errAge := strconv.Atoi(update.Message.Text)
@@ -146,21 +137,21 @@ func (app *Application) handlerDefault(ctx context.Context, b *bot.Bot, update *
 			return
 		}
 
-		app.users[userID].Age = age
+		app.f.Set(userID, "age", update.Message.Text)
 
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "Thank you!",
 		})
 
-		app.f.Transition(userID, stateFinish, chatID, userID)
+		app.f.Transition(ctx, userID, stateFinish, chatID, userID)
 
 	default:
 		fmt.Printf("unexpected state %s\n", currentState)
 	}
 }
 
-func (app *Application) callbackStart(f *fsm.FSM, args ...any) {
+func (app *Application) callbackStart(ctx context.Context, args ...any) error {
 	chatID := args[0]
 	userID := args[1].(int64)
 
@@ -169,38 +160,47 @@ func (app *Application) callbackStart(f *fsm.FSM, args ...any) {
 		Text:   "Let's start the form! Type /cancel to cancel",
 	})
 
-	app.users[userID] = &userData{}
+	app.f.Transition(ctx, userID, stateAskName, chatID)
 
-	f.Transition(userID, stateAskName, chatID)
+	return nil
 }
 
-func (app *Application) callbackAskName(f *fsm.FSM, args ...any) {
+func (app *Application) callbackAskName(ctx context.Context, args ...any) error {
 	chatID := args[0]
 
 	app.b.SendMessage(context.Background(), &bot.SendMessageParams{
 		ChatID: chatID,
 		Text:   "What's your name? (at least 2 characters)",
 	})
+
+	return nil
 }
 
-func (app *Application) callbackAskAge(_ *fsm.FSM, args ...any) {
+func (app *Application) callbackAskAge(ctx context.Context, args ...any) error {
 	chatID := args[0]
 
 	app.b.SendMessage(context.Background(), &bot.SendMessageParams{
 		ChatID: chatID,
 		Text:   "How old are you? (between 18 and 100)",
 	})
+
+	return nil
 }
 
-func (app *Application) callbackFinish(f *fsm.FSM, args ...any) {
+func (app *Application) callbackFinish(ctx context.Context, args ...any) error {
 	chatID := args[0]
 	userID := args[1].(int64)
 
+	userName, _ := app.f.Get(userID, "name")
+	userAge, _ := app.f.Get(userID, "age")
+
 	app.b.SendMessage(context.Background(), &bot.SendMessageParams{
 		ChatID: chatID,
-		Text: fmt.Sprintf("Name: %s\nAge: %d",
-			bot.EscapeMarkdown(app.users[userID].Name), app.users[userID].Age),
+		Text: fmt.Sprintf("Name: %s\nAge: %s",
+			userName, userAge),
 	})
 
-	f.Transition(userID, stateDefault)
+	app.f.Transition(ctx, userID, stateDefault)
+
+	return nil
 }
