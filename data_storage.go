@@ -35,12 +35,13 @@ func (d *dataStorage[K, V]) Set(userID int64, key K, value V) error {
 }
 
 // Get gets user's data from data storage
-func (d *dataStorage[K, V]) Get(userID int64, key K) (any, error) {
+func (d *dataStorage[K, V]) Get(userID int64, key K) (V, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	if _, ok := d.Storage[userID]; !ok {
-		return nil, fmt.Errorf("%w, userID:%d, comparable:%v", errNoUserData, userID, key)
+		var empty V
+		return empty, fmt.Errorf("%w, userID:%d, comparable:%v", errNoUserData, userID, key)
 	}
 
 	return d.Storage[userID][key], nil
