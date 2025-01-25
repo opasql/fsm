@@ -29,7 +29,7 @@ type UserStateStorage interface {
 // DataStorage is an interface for data storage
 type DataStorage[K comparable, V any] interface {
 	Set(userID int64, key K, value V) error
-	Get(userID int64, key K) (any, error)
+	Get(userID int64, key K) (V, error)
 	Delete(userID int64, key K) error
 }
 
@@ -122,10 +122,11 @@ func (f *FSM[K, V]) Set(userID int64, key K, value V) error {
 }
 
 // Get gets a value from data storage by userID and comparable
-func (f *FSM[K, V]) Get(userID int64, key K) (any, error) {
+func (f *FSM[K, V]) Get(userID int64, key K) (V, error) {
 	v, err := f.storage.Get(userID, key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user data: %w", err)
+		var empty V
+		return empty, fmt.Errorf("failed to get user data: %w", err)
 	}
 
 	return v, nil
