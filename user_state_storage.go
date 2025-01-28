@@ -45,7 +45,7 @@ func (u *userStateStorage) Get(userID int64) (StateID, error) {
 
 	s, ok := u.Storage[userID]
 	if !ok {
-		return "", fmt.Errorf("%w: userID: %d", errNoUserState, userID)
+		return "", fmt.Errorf("%w: userID: %d", ErrNoUserState, userID)
 	}
 
 	return s, nil

@@ -41,7 +41,7 @@ func (d *dataStorage[K, V]) Get(userID int64, key K) (V, error) {
 
 	if _, ok := d.Storage[userID]; !ok {
 		var empty V
-		return empty, fmt.Errorf("%w, userID:%d, comparable:%v", errNoUserData, userID, key)
+		return empty, fmt.Errorf("%w, userID:%d, comparable:%v", ErrNoUserData, userID, key)
 	}
 
 	return d.Storage[userID][key], nil
