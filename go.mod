@@ -1,3 +1,3 @@
-module github.com/go-telegram/fsm
+module github.com/opasql/fsm
 
 go 1.23.0
