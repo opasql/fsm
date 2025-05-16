@@ -67,7 +67,12 @@ func (f *FSM[K, V]) AddCallbacks(cb map[StateID]Callback) {
 
 // Transition transitions the user to a new state
 func (f *FSM[K, V]) Transition(ctx context.Context, userID int64, stateID StateID, args ...any) error {
-	err := f.userStates.Set(userID, stateID)
+	oldStateID, err := f.userStates.Get(userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user state: %w", err)
+	}
+
+	err = f.userStates.Set(userID, stateID)
 	if err != nil {
 		return fmt.Errorf("failed to set user state: %w", err)
 	}
@@ -76,6 +81,11 @@ func (f *FSM[K, V]) Transition(ctx context.Context, userID int64, stateID StateI
 	if okCb {
 		err = cb(ctx, args...)
 		if err != nil {
+			err = f.userStates.Set(userID, oldStateID)
+			if err != nil {
+				return fmt.Errorf("failed to set user state: %w", err)
+			}
+
 			return fmt.Errorf("failed to execute callback: %w", err)
 		}
 	}
